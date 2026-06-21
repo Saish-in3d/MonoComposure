@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "GPUCompositionGraphicsPipeline",
+	"Description": "Plugin to handle efficient ingestion, composition, addition and modification of 2D and 3D graphics",
+	"Category": "Other",
+	"CreatedBy": "Saish_in3d",
+	"CreatedByURL": "saishsakharkar.in",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "GPUCompositionGraphicsPipeline",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit"
+		}
+	]
+}

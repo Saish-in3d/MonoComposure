@@ -1,0 +1,136 @@
+#include "/Engine/Public/Platform.ush"
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/ScreenPass.ush"
+
+Texture2D ViewportSceneColor;
+Texture2D<uint> MaskInputTexture;
+Texture2D MediaTexture;
+float StageOneValue;
+float StageTwoValue;
+int TransparentBase;
+
+float4 CompositeBuffers(float4 Base, float4 Overlay,float4 VirtualWorld, float CGOverlayOpacity, float VirtualWorldOpacity,
+	int IsBackgroundTransparent, uint inMaskValue)
+{
+	
+	
+	//clamping alpha values between 0-1
+	float a1 = 1-saturate(Base.w);
+	float a2 =  saturate(Overlay.w);
+	float a3 = 1-saturate(VirtualWorld.w);
+	
+	float3 TranslucentOverlayedOutput;
+	
+	if (IsBackgroundTransparent == 1)
+	{
+		//Overlaying Unreal CG over background Base plate
+		TranslucentOverlayedOutput = Base.rgb  * a2 + Overlay.rgb ;
+	}
+	else
+	{
+		if (a2 < 0.99f)
+		{
+			TranslucentOverlayedOutput = Base.rgb  * 1 + Overlay.rgb ;
+		}
+		else
+		{
+			
+			TranslucentOverlayedOutput =Overlay.rgb ;
+		}
+	}
+	
+	
+	//lerping with "CGoverlayopacity" to ensure smooth transition between baseplate and CG Overlay
+	float3 CGBaseCompositedOutput = lerp(Base.rgb, TranslucentOverlayedOutput.rgb, CGOverlayOpacity);
+	
+	float FirstAlpha;
+	if (IsBackgroundTransparent == 1)
+	{
+		if (a2 == 1){a2 = 0;} //Enforcing opaque objects to 1 alpha
+		if (inMaskValue == 0){a2 = 1;} //Setting transparent non masked areas
+		FirstAlpha = lerp(a1, a2,CGOverlayOpacity);
+	}
+	else
+	{
+		FirstAlpha = 0;
+	}
+	
+	float3 FinalOverlayOutput = lerp(CGBaseCompositedOutput.rgb, VirtualWorld.rgb, VirtualWorldOpacity);
+	float FinalAlpha = lerp(FirstAlpha, 0,VirtualWorldOpacity);
+	
+	return float4(FinalOverlayOutput,FinalAlpha);
+}
+
+// SceneColor Viewport parameters
+SCREEN_PASS_TEXTURE_VIEWPORT(ViewportSceneParameters)
+
+// Output
+shared RWTexture2D<float4> CompOutput;
+
+// Compute Shader code
+[numthreads(CompTHREADS_X, CompTHREADS_Y, CompTHREADS_Z)]
+void CompositorCS(uint2 DispatchThreadId : SV_DispatchThreadID)
+{
+	// Check that we are in scope
+    if (any(DispatchThreadId >= ViewportSceneParameters_ViewportMax))
+    {
+        return;
+    }
+	
+    // Calculate SampleUV with viewport parameters
+    float2 sampleUV = (float2(ViewportSceneParameters_ViewportMin) + (DispatchThreadId + 0.5)) * ViewportSceneParameters_ExtentInverse;
+
+    // sample OriginalColor
+	float4 Background; //Backgroud plate
+	float4 TranslucentCG; //MiddleLayer
+	float4 OriginalColor;//Virtual Forgrround
+	float4 FinalOutput;
+	
+	if (TransparentBase == 1)
+	{
+		Background = float4(0,0, 0,0);
+	}
+	else if (TransparentBase == 0)
+	{
+		Background = MediaTexture.SampleLevel(GlobalPointClampedSampler, sampleUV, 0);
+		//Enforcing Alpha to 1
+		//Background.w = 1;
+	}
+	
+	TranslucentCG = float4(0,0, 0,0);
+	
+	OriginalColor = ViewportSceneColor.SampleLevel(GlobalPointClampedSampler, sampleUV, 0);
+	
+	
+	//Based on mask value we mask out pixels that are not covering the show only actors 
+	uint maskValue = ceil(MaskInputTexture.Load(int3(DispatchThreadId.xy, 0)));
+	if (maskValue == 0)
+	{
+		//transparent output
+		TranslucentCG = float4(0,0, 0,0); // somehow 1 in A is alpha over here
+	}
+	else /*if (maskValue == 1)*/
+	{
+		//opaque/translucent output
+		if (OriginalColor.w == 0)
+		{
+			TranslucentCG = float4(OriginalColor.x, OriginalColor.y, OriginalColor.z,1);
+		}
+		else
+		{
+			TranslucentCG = float4(OriginalColor.x, OriginalColor.y, OriginalColor.z,OriginalColor.w);
+		}
+	}
+	
+	//Compositing logic
+	FinalOutput = CompositeBuffers(Background,TranslucentCG,OriginalColor,
+		StageOneValue,StageTwoValue,TransparentBase,maskValue);
+	
+	
+    // Write output
+    CompOutput[ViewportSceneParameters_ViewportMin + DispatchThreadId] = FinalOutput;
+	
+	
+	
+}
+

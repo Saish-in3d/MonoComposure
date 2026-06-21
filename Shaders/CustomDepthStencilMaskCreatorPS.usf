@@ -1,0 +1,43 @@
+﻿#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/DeferredShadingCommon.ush"
+#include "/Engine/Private/SceneTexturesCommon.ush"
+#include "/Engine/Private/ScreenPass.ush"
+#include "/Engine/Private/SceneTextureParameters.ush"
+#include "/Engine/Private/SceneData.ush"
+#include "HelperFunctionsCommon.usf"
+
+
+
+StructuredBuffer<uint> StencilIds;
+uint StencilIdCount;
+
+uint MainPS(
+	noperspective float4 UVAndScreenPos : TEXCOORD0
+) : SV_Target0
+{
+//#if SHADING_PATH_DEFERRED
+	float2 JitterUV = View.TemporalAAJitter.xy * float2(0.5, -0.5);
+	float2 UV = UVAndScreenPos.xy - JitterUV;
+	
+	const float Float_Eps = 0.00000000001;
+
+	half CustomDepth = CalcSceneCustomDepth(UV);//SceneTexturesCommon.ush
+	half SceneDepth = CalcSceneDepth(UV);//Common.ush
+
+	int CustomStencil = SceneTextureLookup(UV, PPI_CustomStencil, false).r;//SceneTexturesCommon.ush
+	for (uint Index = 0; Index < StencilIdCount; Index++)
+	{
+		if (abs(SceneDepth - CustomDepth) <= Float_Eps)
+		{
+			if (CustomStencil == StencilIds[Index])
+			{
+				return /*CustomStencil*/1;
+			}
+		}
+	}
+//#endif
+	CustomStencil = SceneTextureLookup(UVAndScreenPos.xy, PPI_CustomStencil, false).r;
+	
+	return CustomStencil;
+}
+
